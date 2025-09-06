@@ -1,0 +1,28 @@
+body {
+    font-family: Arial, sans-serif;
+    background: #f8f8f8;
+}
+.container {
+    max-width: 400px;
+    margin: 60px auto;
+    background: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+input[type="url"] {
+    width: 70%;
+    padding: 8px;
+    margin-right: 8px;
+}
+button {
+    padding: 8px 16px;
+}
+#error, .error {
+    color: red;
+    margin-top: 10px;
+}
+#result {
+    margin-top: 20px;
+    font-size: 1.1em;
+}

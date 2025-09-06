@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>shortLinker</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>shortLinker</h1>
+    <form id="shorten-form">
+        <input type="url" id="url-input" placeholder="Вставьте ссылку..." required>
+        <button type="submit">Сократить</button>
+    </form>
+    <div id="result"></div>
+    {{if .error}}
+    <div class="error">{{.error}}</div>
+    {{end}}
+</div>
+<script>
+    document.getElementById('shorten-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const url = document.getElementById('url-input').value;
+        const resDiv = document.getElementById('result');
+        resDiv.textContent = '';
+        try {
+            const resp = await fetch('api/v1/shorten', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url})
+            });
+            const data = await resp.json();
+            if (resp.ok) {
+                resDiv.innerHTML = `<a href="${data.short_url}" target="_blank">${data.short_url}</a>`;
+            } else {
+                resDiv.textContent = data.error || 'Ошибка';
+            }
+        } catch (err) {
+            resDiv.textContent = 'Ошибка запроса';
+        }
+    });
+</script>
+</body>
+</html>
