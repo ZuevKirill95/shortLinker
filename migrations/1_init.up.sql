@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS short_links (
+    id SERIAL PRIMARY KEY,
+    short_id VARCHAR(16) UNIQUE NOT NULL,
+    url TEXT NOT NULL
+);

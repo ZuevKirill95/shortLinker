@@ -2,7 +2,11 @@ module shorLinker
 
 go 1.25
 
-require github.com/gin-gonic/gin v1.10.1
+require (
+	github.com/gin-gonic/gin v1.10.1
+	github.com/jmoiron/sqlx v1.4.0
+	github.com/lib/pq v1.10.9
+)
 
 require (
 	github.com/bytedance/sonic v1.11.6 // indirect

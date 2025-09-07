@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: shortlinker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  migrate:
+    image: migrate/migrate
+    depends_on:
+      - db
+    volumes:
+      - ./migrations:/migrations
+    entrypoint: [ "migrate", "-path", "/migrations", "-database", "postgres://postgres:postgres@db:5432/shortlinker?sslmode=disable", "up" ]
+    restart: on-failure
+
+  app:
+    build: .
+    platform: linux/amd64
+    depends_on:
+      - db
+      - migrate
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/shortlinker?sslmode=disable
+    ports:
+      - "8080:8080"
+#    volumes:
+#      - .:/app
+
+volumes:
+  db_data:

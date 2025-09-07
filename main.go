@@ -2,11 +2,16 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
+	"log"
 	"net/http"
-	"sync"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 )
 
 type URLRequest struct {
@@ -17,10 +22,12 @@ type URLResponse struct {
 	ShortURL string `json:"short_url"`
 }
 
-var (
-	urlStore = make(map[string]string)
-	mu       sync.RWMutex
-)
+type ShortLink struct {
+	ShortID string `db:"short_id"`
+	URL     string `db:"url"`
+}
+
+var db *sqlx.DB
 
 func generateShortID(n int) string {
 	b := make([]byte, n)
@@ -28,7 +35,7 @@ func generateShortID(n int) string {
 	if err != nil {
 		return ""
 	}
-	return base64.URLEncoding.EncodeToString(b)[:n]
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(b), "=")[:n]
 }
 
 func shortenURL(c *gin.Context) {
@@ -38,17 +45,27 @@ func shortenURL(c *gin.Context) {
 		return
 	}
 
-	shortID := generateShortID(6)
-
-	mu.Lock()
+	// Генерируем уникальный shortID
+	var shortID string
 	for {
-		if _, exists := urlStore[shortID]; !exists {
+		shortID = generateShortID(6)
+		var exists bool
+		err := db.Get(&exists, "SELECT EXISTS(SELECT 1 FROM short_links WHERE short_id=$1)", shortID)
+		if err != nil && err != sql.ErrNoRows {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+		if !exists {
 			break
 		}
-		shortID = generateShortID(6)
 	}
-	urlStore[shortID] = req.URL
-	mu.Unlock()
+
+	// Сохраняем в БД
+	_, err := db.Exec("INSERT INTO short_links (short_id, url) VALUES ($1, $2)", shortID, req.URL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save short link"})
+		return
+	}
 
 	host := c.Request.Host
 	scheme := "http://"
@@ -64,34 +81,41 @@ func shortenURL(c *gin.Context) {
 func redirect(c *gin.Context) {
 	shortID := c.Param("short")
 
-	mu.RLock()
-	url, exists := urlStore[shortID]
-	mu.RUnlock()
-
-	if !exists {
-		c.HTML(http.StatusNotFound, "index.html", gin.H{
-			"error": "Short URL not found",
-		})
+	var link ShortLink
+	err := db.Get(&link, "SELECT short_id, url FROM short_links WHERE short_id=$1", shortID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.HTML(http.StatusNotFound, "index.html", gin.H{
+				"error": "Short URL not found",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		}
 		return
 	}
-	c.Redirect(http.StatusFound, url)
+	c.Redirect(http.StatusFound, link.URL)
 }
 
 func main() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://postgres:postgres@localhost:5432/shortlinker?sslmode=disable"
+	}
+
+	var err error
+	db, err = sqlx.Connect("postgres", dsn)
+	if err != nil {
+		log.Fatalln("Failed to connect to DB:", err)
+	}
+
 	r := gin.Default()
-
-	// Статика
 	r.Static("/static", "./static")
-
-	// HTML-шаблоны
 	r.LoadHTMLGlob("templates/*")
 
-	// Главная страница
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.html", nil)
 	})
 
-	// Версионированный API
 	api := r.Group("/api")
 	{
 		v1 := api.Group("/v1")
