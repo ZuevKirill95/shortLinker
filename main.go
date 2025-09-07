@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"log"
 	"net/http"
@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type URLRequest struct {
@@ -23,11 +23,11 @@ type URLResponse struct {
 }
 
 type ShortLink struct {
-	ShortID string `db:"short_id"`
-	URL     string `db:"url"`
+	ShortID string
+	URL     string
 }
 
-var db *sqlx.DB
+var db *pgxpool.Pool
 
 func generateShortID(n int) string {
 	b := make([]byte, n)
@@ -50,8 +50,8 @@ func shortenURL(c *gin.Context) {
 	for {
 		shortID = generateShortID(6)
 		var exists bool
-		err := db.Get(&exists, "SELECT EXISTS(SELECT 1 FROM short_links WHERE short_id=$1)", shortID)
-		if err != nil && err != sql.ErrNoRows {
+		err := db.QueryRow(c, "SELECT EXISTS(SELECT 1 FROM short_links WHERE short_id=$1)", shortID).Scan(&exists)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 			return
 		}
@@ -61,7 +61,7 @@ func shortenURL(c *gin.Context) {
 	}
 
 	// Сохраняем в БД
-	_, err := db.Exec("INSERT INTO short_links (short_id, url) VALUES ($1, $2)", shortID, req.URL)
+	_, err := db.Exec(c, "INSERT INTO short_links (short_id, url) VALUES ($1, $2)", shortID, req.URL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save short link"})
 		return
@@ -82,9 +82,9 @@ func redirect(c *gin.Context) {
 	shortID := c.Param("short")
 
 	var link ShortLink
-	err := db.Get(&link, "SELECT short_id, url FROM short_links WHERE short_id=$1", shortID)
+	err := db.QueryRow(c, "SELECT short_id, url FROM short_links WHERE short_id=$1", shortID).Scan(&link.ShortID, &link.URL)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == pgx.ErrNoRows {
 			c.HTML(http.StatusNotFound, "index.html", gin.H{
 				"error": "Short URL not found",
 			})
@@ -103,10 +103,11 @@ func main() {
 	}
 
 	var err error
-	db, err = sqlx.Connect("postgres", dsn)
+	db, err = pgxpool.New(context.Background(), dsn)
 	if err != nil {
 		log.Fatalln("Failed to connect to DB:", err)
 	}
+	defer db.Close()
 
 	r := gin.Default()
 	r.Static("/static", "./static")
